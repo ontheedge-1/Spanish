@@ -15,6 +15,8 @@
  * - other preterite rules (i->y, stem changes, etc.)
  */
 
+import irregularPreterite from "./verbPacks/irregular_preterite.js";
+
 const PERSONS = ["yo", "tu", "el", "nosotros", "vosotros", "ellos"];
 
 /** Always accent-tolerant normalization. Keeps ñ distinct (does NOT convert ñ -> n). */
@@ -85,6 +87,9 @@ export function conjugate(infinitive, tense, person, packs = {}) {
   if (!PERSONS.includes(person)) {
     throw new Error(`Unsupported person: ${person}`);
   }
+
+  const irr = irregularPreterite?.[String(infinitive || "").toLowerCase().trim()];
+  if (irr && irr[person]) return irr[person];
 
   const cls = verbClass(infinitive);
   if (!cls) throw new Error(`Not a Spanish infinitive: ${infinitive}`);
