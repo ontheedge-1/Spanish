@@ -1,7 +1,7 @@
 import { getVocab, addVocab, deleteVocab } from "../data/vocabStore.js";
 import { getProgressMap, ensureProgress } from "../data/progressStore.js";
 
-const SYNC_URL = "https://spanish-sync-proxy.ricokunzed.workers.dev";  // cloudflare worker
+const SYNC_URL = "https://spanish-sync-proxy.ricokunzedd.workers.dev";  // cloudflare worker
 
 function uid() {
   return "v_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
