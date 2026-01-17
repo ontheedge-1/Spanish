@@ -134,7 +134,11 @@ async function syncPush(statusEl) {
     return;
   }
 
-  setStatus(statusEl, `Pushed ✅ vocab=${data.counts?.vocab ?? "?"}, progress=${data.counts?.progress ?? "?"}, settings=ok.`, "ok");
+  setStatus(
+    statusEl,
+    `Pushed ✅ vocab=${data.counts?.vocab ?? "?"}, progress=${data.counts?.progress ?? "?"}, settings=ok.`,
+    "ok"
+  );
 }
 
 function renderVerbListUI(container, onChange) {
@@ -190,11 +194,11 @@ function renderVerbListUI(container, onChange) {
       return;
     }
     setStatus(hint, `Created list "${getActiveVerbList().name}".`, "ok");
-    onChange?.(); // re-render UI elsewhere
+    onChange?.();
   });
 }
 
-function renderTable(root, { items, progress }) {
+function renderTable(root, { items, progress, pageRoot }) {
   const tableWrap = document.createElement("div");
   const s = getSettings();
   const activeList = getActiveVerbList(s);
@@ -268,24 +272,26 @@ function renderTable(root, { items, progress }) {
 
   tableWrap.addEventListener("click", (e) => {
     const del = e.target.closest("button[data-del]");
-    if (del) {
-      const id = del.getAttribute("data-del");
-      if (!id) return;
-      if (!confirm("Delete this item?")) return;
-      deleteVocab(id);
-      renderVocabulary(root.parentElement);
-      return;
-    }
+    if (!del) return;
+
+    const id = del.getAttribute("data-del");
+    if (!id) return;
+
+    if (!confirm("Delete this item?")) return;
+
+    deleteVocab(id);
+    renderVocabulary(pageRoot);
   });
 
   tableWrap.addEventListener("change", (e) => {
     const cb = e.target.closest("input[data-verb-toggle]");
     if (!cb) return;
+
     const id = cb.getAttribute("data-verb-toggle");
     if (!id) return;
+
     toggleVerbInActiveList(id);
-    // no full rerender needed, but simplest:
-    renderVocabulary(root.parentElement);
+    renderVocabulary(pageRoot);
   });
 }
 
@@ -374,9 +380,8 @@ export function renderVocabulary(root) {
 
   root.append(header, syncCard, verbListWrap, formCard, listWrap);
 
-  // Verb list UI
   renderVerbListUI(verbListWrap, () => {
-    renderVocabulary(root); // simplest refresh
+    renderVocabulary(root);
   });
 
   const statusEl = syncCard.querySelector("#syncStatus");
@@ -385,7 +390,7 @@ export function renderVocabulary(root) {
   syncCard.querySelector("#pullBtn").addEventListener("click", async () => {
     try {
       await syncPull(statusEl);
-      renderVocabulary(root); // refresh everything (lists + table)
+      renderVocabulary(root);
     } catch (err) {
       setStatus(statusEl, `Pull error: ${err.message}`, "error");
     }
@@ -409,7 +414,7 @@ export function renderVocabulary(root) {
     const progress = getProgressMap();
     const area = listWrap.querySelector("#tableArea");
     area.innerHTML = "";
-    renderTable(area, { items, progress });
+    renderTable(area, { items, progress, pageRoot: root });
   }
 
   const form = formCard.querySelector("#vForm");
