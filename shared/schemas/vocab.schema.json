@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "required": [
+    "id",
+    "lang",
+    "lemma",
+    "translation",
+    "pos"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "lang": {
+      "type": "string"
+    },
+    "lemma": {
+      "type": "string"
+    },
+    "translation": {
+      "type": "string"
+    },
+    "pos": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "required": [
+    "itemId",
+    "strength",
+    "seen",
+    "correct"
+  ],
+  "properties": {
+    "itemId": {
+      "type": "string"
+    },
+    "strength": {
+      "type": "number"
+    },
+    "seen": {
+      "type": "integer"
+    },
+    "correct": {
+      "type": "integer"
+    }
+  }
+}

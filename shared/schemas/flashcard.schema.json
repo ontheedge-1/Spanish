@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "exerciseType": {
+      "const": "flashcard"
+    },
+    "cards": {
+      "type": "array"
+    }
+  }
+}

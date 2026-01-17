@@ -1,0 +1,15 @@
+{
+  "exerciseType": "flashcard",
+  "cards": [
+    {
+      "itemId": "vocab_001",
+      "front": "bezahlen",
+      "back": "pagar"
+    },
+    {
+      "itemId": "vocab_002",
+      "front": "der Tisch",
+      "back": "mesa"
+    }
+  ]
+}
