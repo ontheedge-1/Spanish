@@ -1,12 +1,13 @@
 import { getVocab, addVocab, deleteVocab } from "../data/vocabStore.js";
 import { getProgressMap, ensureProgress } from "../data/progressStore.js";
 
+const SYNC_URL = "https://script.google.com/macros/s/AKfycbzYjUzaTOp48eGQIgKoiJld9T9hm9VITlpY3JUbztIj2Vo5oz0sPAt3oEsx7yfikeRq/exec"; // must end with /exec
+
 function uid() {
   return "v_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
 }
 
 function strengthToPriority(strength) {
-  // Priority: lower strength => higher priority (0..100)
   const prio = Math.round((1 - strength) * 100);
   return Math.max(0, Math.min(100, prio));
 }
@@ -19,6 +20,119 @@ function escapeHtml(str) {
     '"': "&quot;",
     "'": "&#039;"
   }[m]));
+}
+
+// --- Local storage keys (must match stores) ---
+const VOCAB_KEY = "spanishtrainer:vocab:v1";
+const PROGRESS_KEY = "spanishtrainer:progress:v1";
+
+function setStatus(el, msg, kind = "info") {
+  el.textContent = msg || "";
+  el.style.color = kind === "error" ? "#b91c1c" : (kind === "ok" ? "#1d4ed8" : "#6b7280");
+}
+
+function normalizeIncomingVocab(vocabArr) {
+  // Apps Script returns tags as "a,b,c" (string). Normalize to array.
+  return (Array.isArray(vocabArr) ? vocabArr : [])
+    .map(v => ({
+      id: String(v.id || "").trim(),
+      lang: String(v.lang || "es").trim(),
+      type: String(v.type || "vocab").trim(),
+      lemma: String(v.lemma || "").trim(),
+      translation: String(v.translation || "").trim(),
+      pos: String(v.pos || "other").trim(),
+      tags: Array.isArray(v.tags)
+        ? v.tags
+        : String(v.tags || "").split(",").map(t => t.trim()).filter(Boolean),
+      createdAt: v.createdAt ? String(v.createdAt) : new Date().toISOString()
+    }))
+    .filter(v => v.id && v.lemma && v.translation);
+}
+
+function normalizeIncomingProgress(progressArr) {
+  // Apps Script returns progress rows as array of objects
+  const map = {};
+  (Array.isArray(progressArr) ? progressArr : []).forEach(p => {
+    const itemId = String(p.itemId || "").trim();
+    if (!itemId) return;
+    map[itemId] = {
+      itemId,
+      strength: Number(p.strength ?? 0.25),
+      seen: Number(p.seen ?? 0),
+      correct: Number(p.correct ?? 0)
+    };
+  });
+  return map;
+}
+
+async function syncPull(statusEl) {
+  if (!SYNC_URL || SYNC_URL.includes("PASTE_YOUR")) {
+    setStatus(statusEl, "SYNC_URL is not set yet. Paste your Apps Script /exec URL at the top of this file.", "error");
+    return;
+  }
+
+  setStatus(statusEl, "Sync Pull: loading from Google Sheet…");
+
+  const url = SYNC_URL.replace(/\/$/, "") + "?action=pull";
+  const res = await fetch(url, { method: "GET" });
+
+  if (!res.ok) {
+    setStatus(statusEl, `Pull failed (HTTP ${res.status}).`, "error");
+    return;
+  }
+
+  const data = await res.json();
+  if (!data.ok) {
+    setStatus(statusEl, `Pull failed: ${data.error || "unknown error"}`, "error");
+    return;
+  }
+
+  const vocab = normalizeIncomingVocab(data.vocab);
+  const progressMap = normalizeIncomingProgress(data.progress);
+
+  // Replace local storage (source of truth = sheet)
+  localStorage.setItem(VOCAB_KEY, JSON.stringify(vocab));
+  localStorage.setItem(PROGRESS_KEY, JSON.stringify(progressMap));
+
+  setStatus(statusEl, `Pulled ${vocab.length} vocab items and ${Object.keys(progressMap).length} progress rows.`, "ok");
+}
+
+async function syncPush(statusEl) {
+  if (!SYNC_URL || SYNC_URL.includes("PASTE_YOUR")) {
+    setStatus(statusEl, "SYNC_URL is not set yet. Paste your Apps Script /exec URL at the top of this file.", "error");
+    return;
+  }
+
+  setStatus(statusEl, "Sync Push: uploading to Google Sheet…");
+
+  // Read local
+  const vocab = getVocab();
+  const progressMap = getProgressMap();
+
+  const payload = {
+    vocab,
+    progress: progressMap
+  };
+
+  const url = SYNC_URL.replace(/\/$/, "") + "?action=push";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    setStatus(statusEl, `Push failed (HTTP ${res.status}).`, "error");
+    return;
+  }
+
+  const data = await res.json();
+  if (!data.ok) {
+    setStatus(statusEl, `Push failed: ${data.error || "unknown error"}`, "error");
+    return;
+  }
+
+  setStatus(statusEl, `Pushed ✅ vocab=${data.counts?.vocab ?? "?"}, progress=${data.counts?.progress ?? "?"}`, "ok");
 }
 
 function renderTable(root, { items, progress }) {
@@ -43,7 +157,7 @@ function renderTable(root, { items, progress }) {
       item.pos === "verb" ? "blue"
       : item.pos === "phrase" ? "purple"
       : item.pos === "noun" ? "purple"
-      : "badge";
+      : "";
 
     return `
       <tr>
@@ -80,7 +194,6 @@ function renderTable(root, { items, progress }) {
 
   root.append(tableWrap);
 
-  // Delete handler (event delegation)
   tableWrap.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-del]");
     if (!btn) return;
@@ -92,8 +205,6 @@ function renderTable(root, { items, progress }) {
     if (!ok) return;
 
     deleteVocab(id);
-
-    // Re-render the page
     renderVocabulary(root.parentElement);
   });
 }
@@ -105,9 +216,21 @@ export function renderVocabulary(root) {
   header.innerHTML = `
     <div class="h1">Vocabulary</div>
     <div class="p">
-      Add words, phrases, and chunks you want to learn. This list will power Flashcards
+      Add words, phrases, and chunks you want to learn. This list powers Flashcards
       <span class="badge blue">and</span> later the LLM (so it can include your priority items in generated exercises).
     </div>
+  `;
+
+  const syncCard = document.createElement("div");
+  syncCard.className = "card";
+  syncCard.innerHTML = `
+    <h3>Sync (Google Sheet)</h3>
+    <div class="p">Use <strong>Pull</strong> to load from the Sheet onto this device. Use <strong>Push</strong> to upload this device’s data to the Sheet.</div>
+    <div class="btnrow">
+      <button class="btn" id="pullBtn" type="button">Sync Pull</button>
+      <button class="btn primary" id="pushBtn" type="button">Sync Push</button>
+    </div>
+    <div class="p" id="syncStatus" style="margin-top:10px;"></div>
   `;
 
   const formCard = document.createElement("div");
@@ -115,8 +238,7 @@ export function renderVocabulary(root) {
   formCard.innerHTML = `
     <h3>Add a new item</h3>
     <div class="p">
-      Tip: for nouns, save the Spanish without the article (e.g. <strong>mesa</strong>) and put the article in English if you want (e.g. <strong>the table</strong>).
-      Phrases are welcome (e.g. <strong>es lo que hay</strong>).
+      Tip: nouns without article in Spanish (e.g. <strong>mesa</strong>). Phrases are welcome (e.g. <strong>es lo que hay</strong>).
     </div>
 
     <form id="vForm" class="form">
@@ -164,14 +286,33 @@ export function renderVocabulary(root) {
     <div id="tableArea"></div>
   `;
 
-  root.append(header, formCard, listWrap);
+  root.append(header, syncCard, formCard, listWrap);
+
+  const statusEl = syncCard.querySelector("#syncStatus");
+  setStatus(statusEl, "Ready.");
+
+  syncCard.querySelector("#pullBtn").addEventListener("click", async () => {
+    try {
+      await syncPull(statusEl);
+      refreshTable();
+    } catch (err) {
+      setStatus(statusEl, `Pull error: ${err.message}`, "error");
+    }
+  });
+
+  syncCard.querySelector("#pushBtn").addEventListener("click", async () => {
+    try {
+      await syncPush(statusEl);
+    } catch (err) {
+      setStatus(statusEl, `Push error: ${err.message}`, "error");
+    }
+  });
 
   function refreshTable() {
     const items = getVocab()
       .slice()
       .sort((a, b) => a.lemma.localeCompare(b.lemma, "es"));
 
-    // Ensure progress exists for each item
     items.forEach(it => ensureProgress(it.id));
 
     const progress = getProgressMap();
