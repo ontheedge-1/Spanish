@@ -84,21 +84,35 @@ async function syncPull(statusEl) {
     return;
   }
 
-  const data = await res.json();
-  if (!data.ok) {
-    setStatus(statusEl, `Pull failed: ${data.error || "unknown error"}`, "error");
+    const envelope = await res.json();
+
+  // Worker-level failure (HTTP or Worker error envelope)
+  if (!envelope.ok) {
+    const msg = envelope?.error?.message || envelope?.error || "unknown error";
+    setStatus(statusEl, `Pull failed: ${msg}`, "error");
+    return;
+  }
+
+  // Apps Script payload sits in envelope.data
+  const payload = envelope.data;
+
+  // Apps Script-level failure (if your Apps Script returns ok:false with HTTP 200)
+  if (payload && payload.ok === false) {
+    const msg = payload?.error?.message || payload?.error || "unknown error";
+    setStatus(statusEl, `Pull failed: ${msg}`, "error");
     return;
   }
 
   // Replace local vocab/progress
-  const vocab = normalizeIncomingVocab(data.vocab);
-  const progressMap = normalizeIncomingProgress(data.progress);
+  const vocab = normalizeIncomingVocab(payload?.vocab);
+  const progressMap = normalizeIncomingProgress(payload?.progress);
 
   localStorage.setItem(VOCAB_KEY, JSON.stringify(vocab));
   localStorage.setItem(PROGRESS_KEY, JSON.stringify(progressMap));
 
   // Replace local settings (sheet is source of truth)
-  importSettings(data.settings || {});
+  importSettings(payload?.settings || {});
+
 
   setStatus(
     statusEl,
@@ -128,17 +142,28 @@ async function syncPush(statusEl) {
     return;
   }
 
-  const data = await res.json();
-  if (!data.ok) {
-    setStatus(statusEl, `Push failed: ${data.error || "unknown error"}`, "error");
+    const envelope = await res.json();
+
+  if (!envelope.ok) {
+    const msg = envelope?.error?.message || envelope?.error || "unknown error";
+    setStatus(statusEl, `Push failed: ${msg}`, "error");
+    return;
+  }
+
+  const payloadResp = envelope.data;
+
+  if (payloadResp && payloadResp.ok === false) {
+    const msg = payloadResp?.error?.message || payloadResp?.error || "unknown error";
+    setStatus(statusEl, `Push failed: ${msg}`, "error");
     return;
   }
 
   setStatus(
     statusEl,
-    `Pushed ✅ vocab=${data.counts?.vocab ?? "?"}, progress=${data.counts?.progress ?? "?"}, settings=ok.`,
+    `Pushed ✅ vocab=${payloadResp?.counts?.vocab ?? "?"}, progress=${payloadResp?.counts?.progress ?? "?"}, settings=ok.`,
     "ok"
   );
+
 }
 
 function renderVerbListUI(container, onChange) {
