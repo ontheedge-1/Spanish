@@ -3,6 +3,8 @@ import { renderHome } from "./pages/home.js";
 import { renderVocabulary } from "./pages/vocabulary.js";
 import { renderFlashcards } from "./pages/flashcards.js";
 import { renderVerbCloze } from "./pages/verbCloze.js";
+import { renderExercise } from "./pages/exercise.js";
+
 
 const root = document.getElementById("app");
 
@@ -10,7 +12,8 @@ const routes = {
   "/": renderHome,
   "/vocabulary": renderVocabulary,
   "/flashcards": renderFlashcards,
-  "/verb-cloze": renderVerbCloze,
+  "/verb-cloze": renderExercise,
+  "/exercise": renderExercise,
   "/404": (r) => {
     r.innerHTML = `
       <div class="h1">404</div>
