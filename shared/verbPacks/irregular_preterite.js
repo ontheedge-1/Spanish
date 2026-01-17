@@ -1,0 +1,26 @@
+export default {
+  ir: {
+    yo: "fui",
+    tu: "fuiste",
+    el: "fue",
+    nosotros: "fuimos",
+    vosotros: "fuisteis",
+    ellos: "fueron"
+  },
+  tener: {
+    yo: "tuve",
+    tu: "tuviste",
+    el: "tuvo",
+    nosotros: "tuvimos",
+    vosotros: "tuvisteis",
+    ellos: "tuvieron"
+  },
+  decir: {
+    yo: "dije",
+    tu: "dijiste",
+    el: "dijo",
+    nosotros: "dijimos",
+    vosotros: "dijisteis",
+    ellos: "dijeron"
+  }
+};
