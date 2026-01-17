@@ -180,30 +180,83 @@ body{
 
 .table tr:last-child td{ border-bottom:none; }
 
-.badge{
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  padding:3px 10px;
+/* =========================
+   Badge (clickable + active)
+   ========================= */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
   border-radius: 999px;
+
   font-size: 12px;
-  font-weight:800;
-  border:1px solid rgba(229,231,235,.9);
+  font-weight: 700;
+
+  border: 1px solid rgba(229,231,235,.9);
   background: rgba(243,244,246,.8);
   color: var(--text);
+
+  cursor: pointer;
+  user-select: none;
+
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.1s ease;
 }
 
-.badge.blue{
+/* hover = clearly clickable */
+.badge:hover {
+  background: rgba(229,231,235,.9);
+}
+
+/* ACTIVE STATE (used by Exercise UI) */
+.badge.active {
+  font-weight: 800;
+  border-color: currentColor;
+  background: rgba(0,0,0,.06);
+  box-shadow: 0 0 0 2px rgba(0,0,0,.12) inset;
+  transform: translateY(-1px);
+}
+
+/* keyboard accessibility */
+.badge:focus {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+/* disabled (if ever used) */
+.badge:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Optional color variants (still usable) */
+.badge.blue {
   background: rgba(37,99,235,.10);
-  border-color: rgba(37,99,235,.20);
-  color:#1d4ed8;
+  border-color: rgba(37,99,235,.30);
+  color: #1d4ed8;
 }
 
-.badge.purple{
-  background: rgba(124,58,237,.10);
-  border-color: rgba(124,58,237,.20);
-  color:#6d28d9;
+.badge.blue.active {
+  background: rgba(37,99,235,.18);
+  box-shadow: 0 0 0 2px rgba(37,99,235,.35) inset;
 }
+
+.badge.purple {
+  background: rgba(124,58,237,.10);
+  border-color: rgba(124,58,237,.30);
+  color: #6d28d9;
+}
+
+.badge.purple.active {
+  background: rgba(124,58,237,.18);
+  box-shadow: 0 0 0 2px rgba(124,58,237,.35) inset;
+}
+
 
 @media (min-width: 820px){
   .topbar{ flex-direction:row; justify-content:space-between; align-items:center; }
