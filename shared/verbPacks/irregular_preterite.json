@@ -1,11 +1,26 @@
-[
-  {
-    "lemma": "ir"
+{
+  "ir": {
+    "yo": "fui",
+    "tu": "fuiste",
+    "el": "fue",
+    "nosotros": "fuimos",
+    "vosotros": "fuisteis",
+    "ellos": "fueron"
   },
-  {
-    "lemma": "tener"
+  "tener": {
+    "yo": "tuve",
+    "tu": "tuviste",
+    "el": "tuvo",
+    "nosotros": "tuvimos",
+    "vosotros": "tuvisteis",
+    "ellos": "tuvieron"
   },
-  {
-    "lemma": "decir"
+  "decir": {
+    "yo": "dije",
+    "tu": "dijiste",
+    "el": "dijo",
+    "nosotros": "dijimos",
+    "vosotros": "dijisteis",
+    "ellos": "dijeron"
   }
-]
+}
