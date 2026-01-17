@@ -2,21 +2,67 @@ import { getVocab, addVocab, deleteVocab } from "../data/vocabStore.js";
 import { getProgressMap, ensureProgress } from "../data/progressStore.js";
 
 function uid() {
-  // kurz & gut genug für lokale IDs
   return "v_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
 }
 
 function strengthToPriority(strength) {
-  // Prio: je niedriger strength, desto höher prio
+  // Priority: lower strength => higher priority (0..100)
   const prio = Math.round((1 - strength) * 100);
   return Math.max(0, Math.min(100, prio));
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (m) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[m]));
 }
 
 function renderTable(root, { items, progress }) {
   const tableWrap = document.createElement("div");
 
   if (items.length === 0) {
-      tableWrap.innerHTML = `
+    tableWrap.innerHTML = `
+      <div class="card">
+        <h3>No items yet</h3>
+        <p>Add your first word or phrase above, e.g. <strong>pagar</strong> → <strong>to pay</strong>.</p>
+      </div>
+    `;
+    root.append(tableWrap);
+    return;
+  }
+
+  const rows = items.map(item => {
+    const p = progress[item.id] || { strength: 0.25, seen: 0, correct: 0 };
+    const prio = strengthToPriority(p.strength);
+
+    const badgeClass =
+      item.pos === "verb" ? "blue"
+      : item.pos === "phrase" ? "purple"
+      : item.pos === "noun" ? "purple"
+      : "badge";
+
+    return `
+      <tr>
+        <td><strong>${escapeHtml(item.lemma)}</strong></td>
+        <td>${escapeHtml(item.translation)}</td>
+        <td><span class="badge ${badgeClass}">${escapeHtml(item.pos)}</span></td>
+        <td>
+          <span class="badge">${Math.round(p.strength * 100)}%</span>
+          <span class="badge">Prio ${prio}</span>
+        </td>
+        <td>${p.correct}/${p.seen}</td>
+        <td style="text-align:right;">
+          <button class="btn danger" data-del="${item.id}">Delete</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  tableWrap.innerHTML = `
     <table class="table" aria-label="Vocabulary list">
       <thead>
         <tr>
@@ -31,46 +77,6 @@ function renderTable(root, { items, progress }) {
       <tbody>${rows}</tbody>
     </table>
   `;
-    root.append(tableWrap);
-    return;
-  }
-
-  const rows = items.map(item => {
-    const p = progress[item.id] || { strength: 0.25, seen: 0, correct: 0 };
-    const prio = strengthToPriority(p.strength);
-
-    return `
-      <tr>
-        <td><strong>${escapeHtml(item.lemma)}</strong></td>
-        <td>${escapeHtml(item.translation)}</td>
-        <td><span class="badge ${item.pos === "verb" ? "blue" : "purple"}">${escapeHtml(item.pos)}</span></td>
-        <td>
-          <span class="badge">${Math.round(p.strength * 100)}%</span>
-          <span class="badge">Prio ${prio}</span>
-        </td>
-        <td>${p.correct}/${p.seen}</td>
-        <td style="text-align:right;">
-          <button class="btn danger" data-del="${item.id}">Delete</button>
-        </td>
-      </tr>
-    `;
-  }).join("");
-
-  tableWrap.innerHTML = `
-    <table class="table" aria-label="Vokabel-Liste">
-      <thead>
-        <tr>
-          <th>Spanisch</th>
-          <th>Deutsch</th>
-          <th>Wortart</th>
-          <th>Strength / Prio</th>
-          <th>Treffer</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
 
   root.append(tableWrap);
 
@@ -78,6 +84,7 @@ function renderTable(root, { items, progress }) {
   tableWrap.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-del]");
     if (!btn) return;
+
     const id = btn.getAttribute("data-del");
     if (!id) return;
 
@@ -85,19 +92,10 @@ function renderTable(root, { items, progress }) {
     if (!ok) return;
 
     deleteVocab(id);
-    // Re-render
+
+    // Re-render the page
     renderVocabulary(root.parentElement);
   });
-}
-
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  }[m]));
 }
 
 export function renderVocabulary(root) {
@@ -112,10 +110,7 @@ export function renderVocabulary(root) {
     </div>
   `;
 
-
   const formCard = document.createElement("div");
-  formCard.className = "card";
-    const formCard = document.createElement("div");
   formCard.className = "card";
   formCard.innerHTML = `
     <h3>Add a new item</h3>
@@ -169,7 +164,6 @@ export function renderVocabulary(root) {
     <div id="tableArea"></div>
   `;
 
-
   root.append(header, formCard, listWrap);
 
   function refreshTable() {
@@ -177,7 +171,7 @@ export function renderVocabulary(root) {
       .slice()
       .sort((a, b) => a.lemma.localeCompare(b.lemma, "es"));
 
-    // ensure progress exists for each item
+    // Ensure progress exists for each item
     items.forEach(it => ensureProgress(it.id));
 
     const progress = getProgressMap();
@@ -186,7 +180,6 @@ export function renderVocabulary(root) {
     renderTable(area, { items, progress });
   }
 
-  // Submit handler
   const form = formCard.querySelector("#vForm");
   form.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -214,15 +207,12 @@ export function renderVocabulary(root) {
     ensureProgress(item.id);
 
     form.reset();
-    // keep pos default
     form.querySelector('select[name="pos"]').value = "verb";
-
     refreshTable();
   });
 
-  // Seed demo words
   formCard.querySelector("#seedBtn").addEventListener("click", () => {
-        const demos = [
+    const demos = [
       { lemma: "pagar", translation: "to pay", pos: "verb", tags: ["daily_life"] },
       { lemma: "mesa", translation: "table", pos: "noun", tags: ["home"] },
       { lemma: "es lo que hay", translation: "that's just how it is", pos: "phrase", tags: ["idiom", "spoken"] },
