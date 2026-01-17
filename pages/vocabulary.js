@@ -1,7 +1,17 @@
 import { getVocab, addVocab, deleteVocab } from "../data/vocabStore.js";
 import { getProgressMap, ensureProgress } from "../data/progressStore.js";
+import {
+  exportSettings,
+  importSettings,
+  getSettings,
+  setActiveVerbListId,
+  createVerbList,
+  getActiveVerbList,
+  isVerbInActiveList,
+  toggleVerbInActiveList
+} from "../data/settingsStore.js";
 
-const SYNC_URL = "https://spanish-sync-proxy.ricokunzedd.workers.dev";  // cloudflare worker
+const SYNC_URL = "https://spanish-sync-proxy.ricokunzedd.workers.dev"; // worker base url
 
 function uid() {
   return "v_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
@@ -22,7 +32,7 @@ function escapeHtml(str) {
   }[m]));
 }
 
-// --- Local storage keys (must match stores) ---
+// Must match your stores
 const VOCAB_KEY = "spanishtrainer:vocab:v1";
 const PROGRESS_KEY = "spanishtrainer:progress:v1";
 
@@ -32,7 +42,6 @@ function setStatus(el, msg, kind = "info") {
 }
 
 function normalizeIncomingVocab(vocabArr) {
-  // Apps Script returns tags as "a,b,c" (string). Normalize to array.
   return (Array.isArray(vocabArr) ? vocabArr : [])
     .map(v => ({
       id: String(v.id || "").trim(),
@@ -50,7 +59,6 @@ function normalizeIncomingVocab(vocabArr) {
 }
 
 function normalizeIncomingProgress(progressArr) {
-  // Apps Script returns progress rows as array of objects
   const map = {};
   (Array.isArray(progressArr) ? progressArr : []).forEach(p => {
     const itemId = String(p.itemId || "").trim();
@@ -66,11 +74,6 @@ function normalizeIncomingProgress(progressArr) {
 }
 
 async function syncPull(statusEl) {
-  if (!SYNC_URL || SYNC_URL.includes("PASTE_YOUR")) {
-    setStatus(statusEl, "SYNC_URL is not set yet. Paste your Apps Script /exec URL at the top of this file.", "error");
-    return;
-  }
-
   setStatus(statusEl, "Sync Pull: loading from Google Sheet…");
 
   const url = SYNC_URL.replace(/\/$/, "") + "/api/pull";
@@ -87,32 +90,31 @@ async function syncPull(statusEl) {
     return;
   }
 
+  // Replace local vocab/progress
   const vocab = normalizeIncomingVocab(data.vocab);
   const progressMap = normalizeIncomingProgress(data.progress);
 
-  // Replace local storage (source of truth = sheet)
   localStorage.setItem(VOCAB_KEY, JSON.stringify(vocab));
   localStorage.setItem(PROGRESS_KEY, JSON.stringify(progressMap));
 
-  setStatus(statusEl, `Pulled ${vocab.length} vocab items and ${Object.keys(progressMap).length} progress rows.`, "ok");
+  // Replace local settings (sheet is source of truth)
+  importSettings(data.settings || {});
+
+  setStatus(
+    statusEl,
+    `Pulled vocab=${vocab.length}, progress=${Object.keys(progressMap).length}, settings=ok.`,
+    "ok"
+  );
 }
 
 async function syncPush(statusEl) {
-  if (!SYNC_URL || SYNC_URL.includes("PASTE_YOUR")) {
-    setStatus(statusEl, "SYNC_URL is not set yet. Paste your Apps Script /exec URL at the top of this file.", "error");
-    return;
-  }
-
   setStatus(statusEl, "Sync Push: uploading to Google Sheet…");
 
-  // Read local
   const vocab = getVocab();
   const progressMap = getProgressMap();
+  const settings = exportSettings();
 
-  const payload = {
-    vocab,
-    progress: progressMap
-  };
+  const payload = { vocab, progress: progressMap, settings };
 
   const url = SYNC_URL.replace(/\/$/, "") + "/api/push";
   const res = await fetch(url, {
@@ -132,11 +134,70 @@ async function syncPush(statusEl) {
     return;
   }
 
-  setStatus(statusEl, `Pushed ✅ vocab=${data.counts?.vocab ?? "?"}, progress=${data.counts?.progress ?? "?"}`, "ok");
+  setStatus(statusEl, `Pushed ✅ vocab=${data.counts?.vocab ?? "?"}, progress=${data.counts?.progress ?? "?"}, settings=ok.`, "ok");
+}
+
+function renderVerbListUI(container, onChange) {
+  const s = getSettings();
+  const lists = s.practice.verbLists;
+  const activeId = s.practice.activeVerbListId;
+
+  const options = lists.map(l => `
+    <option value="${escapeHtml(l.id)}" ${l.id === activeId ? "selected" : ""}>
+      ${escapeHtml(l.name)}
+    </option>
+  `).join("");
+
+  container.innerHTML = `
+    <div class="card">
+      <h3>Verb practice lists (max 3)</h3>
+      <div class="p">
+        Choose the active list, then tick verbs in the table to include them.
+        These lists are synced globally via your Google Sheet.
+      </div>
+
+      <div class="form" style="margin-top:10px;">
+        <div>
+          <div class="label">Active verb list</div>
+          <select class="select" id="activeListSelect">${options}</select>
+        </div>
+
+        <div>
+          <div class="label">Create new list</div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <input class="input" id="newListName" placeholder="e.g. Irregular starters" />
+            <button class="btn" id="createListBtn" type="button">Create</button>
+          </div>
+          <div class="p" id="listHint" style="margin-top:8px;"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const hint = container.querySelector("#listHint");
+
+  container.querySelector("#activeListSelect").addEventListener("change", (e) => {
+    setActiveVerbListId(e.target.value);
+    setStatus(hint, `Active list set to "${getActiveVerbList().name}".`, "ok");
+    onChange?.();
+  });
+
+  container.querySelector("#createListBtn").addEventListener("click", () => {
+    const name = String(container.querySelector("#newListName").value || "").trim();
+    const res = createVerbList(name);
+    if (!res.ok) {
+      setStatus(hint, res.error || "Could not create list.", "error");
+      return;
+    }
+    setStatus(hint, `Created list "${getActiveVerbList().name}".`, "ok");
+    onChange?.(); // re-render UI elsewhere
+  });
 }
 
 function renderTable(root, { items, progress }) {
   const tableWrap = document.createElement("div");
+  const s = getSettings();
+  const activeList = getActiveVerbList(s);
 
   if (items.length === 0) {
     tableWrap.innerHTML = `
@@ -159,11 +220,21 @@ function renderTable(root, { items, progress }) {
       : item.pos === "noun" ? "purple"
       : "";
 
+    const isVerb = item.pos === "verb";
+    const checked = isVerbInActiveList(item.id, s);
+    const listCell = isVerb
+      ? `<label style="display:flex; align-items:center; gap:8px;">
+           <input type="checkbox" data-verb-toggle="${item.id}" ${checked ? "checked" : ""}/>
+           <span class="badge blue">in "${escapeHtml(activeList.name)}"</span>
+         </label>`
+      : `<span class="badge">—</span>`;
+
     return `
       <tr>
         <td><strong>${escapeHtml(item.lemma)}</strong></td>
         <td>${escapeHtml(item.translation)}</td>
         <td><span class="badge ${badgeClass}">${escapeHtml(item.pos)}</span></td>
+        <td>${listCell}</td>
         <td>
           <span class="badge">${Math.round(p.strength * 100)}%</span>
           <span class="badge">Prio ${prio}</span>
@@ -183,6 +254,7 @@ function renderTable(root, { items, progress }) {
           <th>Spanish</th>
           <th>English</th>
           <th>POS</th>
+          <th>Verb List</th>
           <th>Strength / Priority</th>
           <th>Hits</th>
           <th></th>
@@ -195,16 +267,24 @@ function renderTable(root, { items, progress }) {
   root.append(tableWrap);
 
   tableWrap.addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-del]");
-    if (!btn) return;
+    const del = e.target.closest("button[data-del]");
+    if (del) {
+      const id = del.getAttribute("data-del");
+      if (!id) return;
+      if (!confirm("Delete this item?")) return;
+      deleteVocab(id);
+      renderVocabulary(root.parentElement);
+      return;
+    }
+  });
 
-    const id = btn.getAttribute("data-del");
+  tableWrap.addEventListener("change", (e) => {
+    const cb = e.target.closest("input[data-verb-toggle]");
+    if (!cb) return;
+    const id = cb.getAttribute("data-verb-toggle");
     if (!id) return;
-
-    const ok = confirm("Delete this item?");
-    if (!ok) return;
-
-    deleteVocab(id);
+    toggleVerbInActiveList(id);
+    // no full rerender needed, but simplest:
     renderVocabulary(root.parentElement);
   });
 }
@@ -225,13 +305,18 @@ export function renderVocabulary(root) {
   syncCard.className = "card";
   syncCard.innerHTML = `
     <h3>Sync (Google Sheet)</h3>
-    <div class="p">Use <strong>Pull</strong> to load from the Sheet onto this device. Use <strong>Push</strong> to upload this device’s data to the Sheet.</div>
+    <div class="p">
+      <strong>Pull</strong> loads the Sheet onto this device. <strong>Push</strong> uploads this device’s data to the Sheet.
+      Settings (verb lists) are included.
+    </div>
     <div class="btnrow">
       <button class="btn" id="pullBtn" type="button">Sync Pull</button>
       <button class="btn primary" id="pushBtn" type="button">Sync Push</button>
     </div>
     <div class="p" id="syncStatus" style="margin-top:10px;"></div>
   `;
+
+  const verbListWrap = document.createElement("div");
 
   const formCard = document.createElement("div");
   formCard.className = "card";
@@ -281,12 +366,18 @@ export function renderVocabulary(root) {
     <h3>Your list</h3>
     <div class="p">
       Strength starts at 25%. Priority is (1 - strength) → higher priority means it should appear more often in practice.
+      For verbs, tick them into your active verb list.
     </div>
     <div class="hr"></div>
     <div id="tableArea"></div>
   `;
 
-  root.append(header, syncCard, formCard, listWrap);
+  root.append(header, syncCard, verbListWrap, formCard, listWrap);
+
+  // Verb list UI
+  renderVerbListUI(verbListWrap, () => {
+    renderVocabulary(root); // simplest refresh
+  });
 
   const statusEl = syncCard.querySelector("#syncStatus");
   setStatus(statusEl, "Ready.");
@@ -294,7 +385,7 @@ export function renderVocabulary(root) {
   syncCard.querySelector("#pullBtn").addEventListener("click", async () => {
     try {
       await syncPull(statusEl);
-      refreshTable();
+      renderVocabulary(root); // refresh everything (lists + table)
     } catch (err) {
       setStatus(statusEl, `Pull error: ${err.message}`, "error");
     }
@@ -357,7 +448,8 @@ export function renderVocabulary(root) {
       { lemma: "pagar", translation: "to pay", pos: "verb", tags: ["daily_life"] },
       { lemma: "mesa", translation: "table", pos: "noun", tags: ["home"] },
       { lemma: "es lo que hay", translation: "that's just how it is", pos: "phrase", tags: ["idiom", "spoken"] },
-      { lemma: "decir", translation: "to say / to tell", pos: "verb", tags: ["verbs"] }
+      { lemma: "decir", translation: "to say / to tell", pos: "verb", tags: ["verbs"] },
+      { lemma: "dar", translation: "to give", pos: "verb", tags: ["verbs", "irregular"] }
     ];
 
     demos.forEach(d => {
