@@ -1,15 +1,16 @@
 import irregularPack from "../shared/verbPacks/irregular_es.js";
 import { getSettings, importSettings } from "../data/settingsStore.js";
+import { answersEqualTolerant } from "../shared/conjugation.js";
 
-// UI constants
+// IMPORTANT: same worker base as your sync proxy
+const WORKER_BASE = "https://spanish-sync-proxy.ricokunzedd.workers.dev";
+
 const TENSES = [
   { key: "preterite", label: "Pretérito" },
   { key: "present", label: "Presente" }
 ];
-
 const SIZES = [10, 15, 20];
 
-// Settings path (we store only what UI needs)
 function ensureExerciseDefaults(s) {
   s.practice = s.practice || {};
   s.practice.irregularExercise = s.practice.irregularExercise || {
@@ -17,35 +18,17 @@ function ensureExerciseDefaults(s) {
     size: 10,
     lemmas: []
   };
-
-  // clamp
-  if (!TENSES.some(t => t.key === s.practice.irregularExercise.tense)) {
-    s.practice.irregularExercise.tense = "preterite";
-  }
-  if (!SIZES.includes(Number(s.practice.irregularExercise.size))) {
-    s.practice.irregularExercise.size = 10;
-  }
-  if (!Array.isArray(s.practice.irregularExercise.lemmas)) {
-    s.practice.irregularExercise.lemmas = [];
-  }
-  // max 10 verbs
+  if (!TENSES.some(t => t.key === s.practice.irregularExercise.tense)) s.practice.irregularExercise.tense = "preterite";
+  if (!SIZES.includes(Number(s.practice.irregularExercise.size))) s.practice.irregularExercise.size = 10;
+  if (!Array.isArray(s.practice.irregularExercise.lemmas)) s.practice.irregularExercise.lemmas = [];
   s.practice.irregularExercise.lemmas = s.practice.irregularExercise.lemmas.slice(0, 10);
-
   return s;
 }
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
   }[m]));
-}
-
-function setHint(el, msg) {
-  el.textContent = msg || "";
 }
 
 function unique(arr) {
@@ -53,7 +36,6 @@ function unique(arr) {
 }
 
 function getAvailableLemmasForTense(tense) {
-  // irregularPack schema: { lemma: { present:{...}, preterite:{...} } }
   return Object.keys(irregularPack)
     .filter(lemma => irregularPack?.[lemma]?.[tense])
     .sort((a, b) => a.localeCompare(b));
@@ -66,9 +48,100 @@ function toggleLemma(list, lemma) {
   return Array.from(set);
 }
 
-// Optional: prettier badge text (keeps lemma as-is otherwise)
-function prettyLemma(lemma) {
-  return lemma; // keep simple for now
+function getVocabContextWords() {
+  // "everything except verbs, incl phrases"
+  // We rely on your vocabStore localStorage structure (same as vocabulary page):
+  // { id, lemma, translation, pos, ... }
+  const raw = localStorage.getItem("spanishtrainer:vocab:v1");
+  if (!raw) return [];
+  let vocab = [];
+  try { vocab = JSON.parse(raw); } catch { return []; }
+
+  const words = (Array.isArray(vocab) ? vocab : [])
+    .filter(v => String(v.pos || "").toLowerCase() !== "verb")
+    .map(v => String(v.lemma || "").trim())
+    .filter(Boolean);
+
+  // random sample up to 40
+  const uniq = unique(words);
+  for (let i = uniq.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [uniq[i], uniq[j]] = [uniq[j], uniq[i]];
+  }
+  return uniq.slice(0, 40);
+}
+
+async function postGenerate(payload) {
+  const url = WORKER_BASE.replace(/\/$/, "") + "/api/generate";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  const txt = await res.text();
+  let data;
+  try { data = JSON.parse(txt); }
+  catch { throw new Error(`Worker returned non-JSON: ${txt.slice(0, 200)}`); }
+
+  if (!res.ok || !data.ok) {
+    const msg = data?.error?.message || data?.message || "Unknown error";
+    throw new Error(msg);
+  }
+  return data.data;
+}
+
+function getCorrectForm(lemma, tense, person) {
+  const entry = irregularPack?.[lemma]?.[tense];
+  const form = entry?.[person];
+  if (!form) throw new Error(`Missing form for ${lemma} ${tense} ${person}`);
+  return form;
+}
+
+// ---- Rendering generated exercise ----
+
+function buildLineHtml(item, slotIndex, isRevealed, userAnswer, isCorrect, correctForm) {
+  // item: dialogue_line | sentence | filler
+  if (item.type === "filler") {
+    return `<div class="p" style="margin:6px 0;">${escapeHtml(item.pre)}</div>`;
+  }
+
+  const pre = item.pre || "";
+  const post = item.post || "";
+
+  const slot = item.slot;
+  const blankId = slot?.id || `s${slotIndex + 1}`;
+
+  const inputDisabled = isRevealed ? "disabled" : "";
+  const answerVal = isRevealed ? (userAnswer ?? "") : "";
+
+  const statusBadge = isRevealed
+    ? (isCorrect
+        ? `<span class="badge active" style="margin-left:8px;">✅</span>`
+        : `<span class="badge active" style="margin-left:8px;">❌ ${escapeHtml(correctForm)}</span>`)
+    : "";
+
+  const speakerPrefix = item.type === "dialogue_line"
+    ? `<b>${escapeHtml(item.speaker)}:</b> `
+    : "";
+
+  // current line must be fully visible: pre + input + post
+  // next lines with blanks are hidden by higher-level logic, not here.
+  return `
+    <div class="p" style="margin:6px 0;">
+      ${speakerPrefix}${escapeHtml(pre)}
+      <input class="input"
+        data-blank-id="${escapeHtml(blankId)}"
+        style="display:inline-block; width:160px; margin:0 6px; padding:6px 10px;"
+        placeholder="..."
+        ${inputDisabled}
+        value="${escapeHtml(answerVal)}"
+        autocomplete="off"
+      />
+      ${escapeHtml(post)}
+      ${statusBadge}
+    </div>
+  `;
 }
 
 export function renderExercise(pageRoot) {
@@ -79,7 +152,7 @@ export function renderExercise(pageRoot) {
     <div class="page">
       <div class="headerRow">
         <h2>Exercise</h2>
-        <div class="p" style="margin:0;">Irregular Drill (LLM-generated dialogue + sentence pool)</div>
+        <div class="p" style="margin:0;">Irregular Drill (LLM-generated)</div>
       </div>
 
       <div class="card" style="margin-top:12px;">
@@ -89,7 +162,7 @@ export function renderExercise(pageRoot) {
 
       <div class="card" style="margin-top:12px;">
         <h3>2) Size</h3>
-        <div class="p" style="margin-top:6px;">Choose total blanks (only 10 / 15 / 20).</div>
+        <div class="p" style="margin-top:6px;">Choose total blanks (10 / 15 / 20).</div>
         <div id="sizeRow" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;"></div>
       </div>
 
@@ -97,22 +170,21 @@ export function renderExercise(pageRoot) {
         <h3>3) Verbs</h3>
         <div class="p" id="verbsHint" style="margin-top:6px;"></div>
         <div id="verbsRow" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;"></div>
-
         <div class="p" id="selectionMeta" style="margin-top:10px;"></div>
       </div>
 
       <div class="card" style="margin-top:12px;">
         <h3>4) Generate</h3>
-        <div class="p" style="margin-top:6px;">
-          This will call the Worker once and generate a full exercise (JSON-only, no solutions, slots only). Not wired yet in this UI step.
-        </div>
-
         <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
           <button class="btn" id="generateBtn" type="button">Generate exercise</button>
           <div class="p" id="genHint" style="margin:0;"></div>
         </div>
+      </div>
 
-        <div id="debugBox" class="p" style="margin-top:10px; white-space:pre-wrap;"></div>
+      <div class="card" id="exerciseCard" style="margin-top:12px; display:none;">
+        <h3>Exercise</h3>
+        <div class="p" id="progressMeta" style="margin-top:6px;"></div>
+        <div id="exerciseBody" style="margin-top:10px;"></div>
       </div>
     </div>
   `;
@@ -124,7 +196,15 @@ export function renderExercise(pageRoot) {
   const selectionMeta = pageRoot.querySelector("#selectionMeta");
   const generateBtn = pageRoot.querySelector("#generateBtn");
   const genHint = pageRoot.querySelector("#genHint");
-  const debugBox = pageRoot.querySelector("#debugBox");
+  const exerciseCard = pageRoot.querySelector("#exerciseCard");
+  const exerciseBody = pageRoot.querySelector("#exerciseBody");
+  const progressMeta = pageRoot.querySelector("#progressMeta");
+
+  let generated = null; // worker exercise JSON
+  let slotOrder = [];   // array of slot ids in order s1..sN
+  let revealedSlots = new Set(); // slot ids revealed
+  let answers = {}; // slotId -> userAnswer
+  let score = { done: 0, correct: 0 };
 
   function currentSettings() {
     return ensureExerciseDefaults(getSettings());
@@ -133,7 +213,6 @@ export function renderExercise(pageRoot) {
   function updateSettings(mutator) {
     const st = currentSettings();
     mutator(st.practice.irregularExercise);
-    // normalize / clamp after mutation
     ensureExerciseDefaults(st);
     importSettings(st);
   }
@@ -142,19 +221,13 @@ export function renderExercise(pageRoot) {
     const st = currentSettings().practice.irregularExercise;
     tenseRow.innerHTML = TENSES.map(t => {
       const active = st.tense === t.key;
-      return `
-        <button class="badge ${active ? "active" : ""}" data-tense="${escapeHtml(t.key)}" type="button">
-          ${escapeHtml(t.label)}
-        </button>
-      `;
+      return `<button class="badge ${active ? "active" : ""}" data-tense="${escapeHtml(t.key)}" type="button">${escapeHtml(t.label)}</button>`;
     }).join("");
-
     tenseRow.querySelectorAll("[data-tense]").forEach(btn => {
       btn.addEventListener("click", () => {
         const tense = btn.getAttribute("data-tense");
         updateSettings(ex => {
           ex.tense = tense;
-          // when tense changes, filter selected lemmas to those available
           const available = new Set(getAvailableLemmasForTense(tense));
           ex.lemmas = (ex.lemmas || []).filter(l => available.has(l));
         });
@@ -167,13 +240,8 @@ export function renderExercise(pageRoot) {
     const st = currentSettings().practice.irregularExercise;
     sizeRow.innerHTML = SIZES.map(n => {
       const active = Number(st.size) === n;
-      return `
-        <button class="badge ${active ? "active" : ""}" data-size="${n}" type="button">
-          ${n}
-        </button>
-      `;
+      return `<button class="badge ${active ? "active" : ""}" data-size="${n}" type="button">${n}</button>`;
     }).join("");
-
     sizeRow.querySelectorAll("[data-size]").forEach(btn => {
       btn.addEventListener("click", () => {
         const n = Number(btn.getAttribute("data-size"));
@@ -187,34 +255,24 @@ export function renderExercise(pageRoot) {
     const st = currentSettings().practice.irregularExercise;
     const available = getAvailableLemmasForTense(st.tense);
     const selected = new Set(st.lemmas || []);
-
-    verbsHint.textContent = `Available irregular verbs for "${st.tense}" (${available.length}). Select up to 10.`;
+    verbsHint.textContent = `Available irregular verbs: ${available.length}. Select up to 10.`;
 
     verbsRow.innerHTML = available.map(lemma => {
       const active = selected.has(lemma);
-      return `
-        <button class="badge ${active ? "active" : ""}" data-lemma="${escapeHtml(lemma)}" type="button">
-          ${escapeHtml(prettyLemma(lemma))}
-        </button>
-      `;
+      return `<button class="badge ${active ? "active" : ""}" data-lemma="${escapeHtml(lemma)}" type="button">${escapeHtml(lemma)}</button>`;
     }).join("");
 
     verbsRow.querySelectorAll("[data-lemma]").forEach(btn => {
       btn.addEventListener("click", () => {
         const lemma = btn.getAttribute("data-lemma");
-
         updateSettings(ex => {
-          const next = toggleLemma(ex.lemmas || [], lemma);
-          const uniq = unique(next);
-
-          if (uniq.length > 10) {
-            // hard cap
-            setHint(genHint, "Max 10 verbs selected.");
+          const next = unique(toggleLemma(ex.lemmas || [], lemma));
+          if (next.length > 10) {
+            genHint.textContent = "Max 10 verbs selected.";
             return;
           }
-          ex.lemmas = uniq;
+          ex.lemmas = next;
         });
-
         renderAll();
       });
     });
@@ -222,22 +280,11 @@ export function renderExercise(pageRoot) {
 
   function renderMetaAndGenerateState() {
     const ex = currentSettings().practice.irregularExercise;
-
     const count = ex.lemmas.length;
     const size = Number(ex.size);
-
-    // auto-min 10 already enforced by size badges, but keep hint consistent
-    selectionMeta.textContent =
-      `Selected: ${count} verb(s) · Tense: ${ex.tense} · Size: ${size} blanks`;
-
-    // Enable generate only if >= 1 verb selected
+    selectionMeta.textContent = `Selected: ${count} · Tense: ${ex.tense} · Blanks: ${size}`;
     generateBtn.disabled = count === 0;
-
-    if (count === 0) {
-      setHint(genHint, "Pick at least 1 verb.");
-    } else {
-      setHint(genHint, "");
-    }
+    genHint.textContent = count === 0 ? "Pick at least 1 verb." : "";
   }
 
   function renderAll() {
@@ -247,32 +294,154 @@ export function renderExercise(pageRoot) {
     renderMetaAndGenerateState();
   }
 
-  generateBtn.addEventListener("click", () => {
-    const ex = currentSettings().practice.irregularExercise;
+  function computeVisibility(items) {
+    // Growth rule B:
+    // show items up to (and including) the current slot item;
+    // hide from the next slot item onward.
+    // Filler between current and next slot item is hidden (because it's "from the next blank onward").
+    // Exception: current slot item itself is fully visible (pre+post always).
+    const size = slotOrder.length;
+    let currentSlotIdx = 0;
+    while (currentSlotIdx < size && revealedSlots.has(slotOrder[currentSlotIdx])) currentSlotIdx++;
 
-    if (!ex.lemmas.length) {
-      setHint(genHint, "Pick at least 1 verb.");
-      return;
+    // currentSlotIdx is the next to answer
+    const visible = [];
+    let slotSeen = 0;
+
+    for (const it of items) {
+      if (it.slot) {
+        slotSeen += 1;
+        if (slotSeen <= currentSlotIdx + 1) {
+          visible.push(true);
+        } else {
+          visible.push(false);
+        }
+      } else {
+        // filler: visible only if we haven't reached the next unanswered slot line yet
+        // i.e., visible while slotSeen <= currentSlotIdx
+        visible.push(slotSeen <= currentSlotIdx);
+      }
+    }
+    return { currentSlotIdx, visible };
+  }
+
+  function renderExercise() {
+    if (!generated) return;
+
+    const items = generated.items;
+    const { currentSlotIdx, visible } = computeVisibility(items);
+
+    const currentSlotId = slotOrder[currentSlotIdx] || null;
+
+    // Update meta
+    progressMeta.textContent = `Progress: ${score.correct}/${score.done} correct · Remaining: ${slotOrder.length - score.done}`;
+
+    // Render visible items
+    let slotCounter = 0;
+    const html = items.map((it, idx) => {
+      if (!visible[idx]) return "";
+      if (it.slot) {
+        const slotId = it.slot.id;
+        const isRevealed = revealedSlots.has(slotId);
+        const userAnswer = answers[slotId] || "";
+        const correctForm = getCorrectForm(it.slot.lemma, it.slot.tense, it.slot.person);
+        const isCorrect = isRevealed ? answersEqualTolerant(userAnswer, correctForm) : false;
+        const out = buildLineHtml(it, slotCounter, isRevealed, userAnswer, isCorrect, correctForm);
+        slotCounter += 1;
+        return out;
+      }
+      return buildLineHtml(it, slotCounter, false, "", false, "");
+    }).join("");
+
+    exerciseBody.innerHTML = html;
+
+    // Focus current input
+    if (currentSlotId) {
+      const input = exerciseBody.querySelector(`input[data-blank-id="${CSS.escape(currentSlotId)}"]`);
+      if (input) input.focus();
     }
 
-    // UI-first step: we show the exact payload we’ll send to the worker later
-    const payloadPreview = {
-      mode: "verbCloze",
-      style: { mix: { dialogue: 0.6, pool: 0.4 } },
-      tense: ex.tense,          // one tense per exercise
-      size: Number(ex.size),    // 10/15/20
-      lemmas: ex.lemmas,        // selected verbs
-      vocabContext: {
-        includePos: ["noun", "adj", "phrase", "other"], // "everything except verbs" (final logic later)
-        count: 25
+    // Attach listeners for inputs (only on current slot)
+    exerciseBody.querySelectorAll("input[data-blank-id]").forEach(inp => {
+      const slotId = inp.getAttribute("data-blank-id");
+      const isCurrent = slotId === currentSlotId;
+      inp.disabled = !isCurrent;
+
+      inp.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          submitCurrent();
+        }
+      });
+    });
+  }
+
+  function submitCurrent() {
+    if (!generated) return;
+    const items = generated.items;
+
+    // find current slot id (first not revealed)
+    let currentSlotId = null;
+    for (const id of slotOrder) {
+      if (!revealedSlots.has(id)) {
+        currentSlotId = id;
+        break;
       }
-    };
+    }
+    if (!currentSlotId) return;
 
-    debugBox.textContent =
-      "UI ready. Next step: wire Worker /api/generate.\n\nPayload preview:\n" +
-      JSON.stringify(payloadPreview, null, 2);
+    const input = exerciseBody.querySelector(`input[data-blank-id="${CSS.escape(currentSlotId)}"]`);
+    const user = input ? input.value : "";
+    answers[currentSlotId] = user;
 
-    setHint(genHint, "UI ok ✅ (worker not wired yet)");
+    // Determine correct
+    const item = items.find(it => it?.slot?.id === currentSlotId);
+    const correctForm = getCorrectForm(item.slot.lemma, item.slot.tense, item.slot.person);
+    const ok = answersEqualTolerant(user, correctForm);
+
+    score.done += 1;
+    if (ok) score.correct += 1;
+
+    // Reveal (shows solution badge; if wrong shows correct form)
+    revealedSlots.add(currentSlotId);
+
+    renderExercise();
+  }
+
+  generateBtn.addEventListener("click", async () => {
+    const ex = currentSettings().practice.irregularExercise;
+    if (!ex.lemmas.length) return;
+
+    generateBtn.disabled = true;
+    genHint.textContent = "Generating…";
+
+    try {
+      const payload = {
+        mode: "verbCloze",
+        tense: ex.tense,
+        size: Number(ex.size),
+        lemmas: ex.lemmas,
+        vocabWords: getVocabContextWords()
+      };
+
+      generated = await postGenerate(payload);
+
+      // init state
+      slotOrder = Array.from({ length: Number(ex.size) }, (_, i) => `s${i + 1}`);
+      revealedSlots = new Set();
+      answers = {};
+      score = { done: 0, correct: 0 };
+
+      exerciseCard.style.display = "";
+      genHint.textContent = "Generated ✅ (press Enter to submit each blank)";
+      renderExercise();
+    } catch (e) {
+      genHint.textContent = `Error: ${String(e?.message || e)}`;
+      generated = null;
+      exerciseCard.style.display = "none";
+    } finally {
+      generateBtn.disabled = false;
+    }
   });
 
   renderAll();
