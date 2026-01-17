@@ -3,11 +3,12 @@ export function renderVerbCloze(root) {
   el.innerHTML = `
     <div class="h1">Verb Cloze</div>
     <div class="p">
-      Platzhalter. Später: Story + Lücken + Scoring. Und LLM kann deine Prioritäts-Vokabeln einbauen.
+      Placeholder. Next: short stories with blanks to fill in (verbs + optionally pronouns).
+      Later: the LLM will include your priority vocabulary items inside the generated sentences.
     </div>
     <div class="card">
-      <h3>LLM-Plan</h3>
-      <p>Generator bekommt constraints.mustIncludeVocab = Top-N Wörter mit niedriger Strength / due.</p>
+      <h3>LLM plan</h3>
+      <p>Generator will receive constraints.mustIncludeVocab = your top priority items.</p>
     </div>
   `;
   root.append(el);
