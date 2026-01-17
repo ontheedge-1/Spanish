@@ -1,35 +1,33 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Spanish Trainer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body {
-      font-family: system-ui, sans-serif;
-      background: #0b0f17;
-      color: #e8eefc;
-      padding: 24px;
-    }
-    h1 { margin-bottom: 8px; }
-    .box {
-      background: #101827;
-      border: 1px solid #22304a;
-      border-radius: 12px;
-      padding: 16px;
-      margin-top: 16px;
-    }
-  </style>
-</head>
-<body>
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spanish Trainer</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">ES</div>
+        <div>
+          <div class="title">Spanish Trainer</div>
+          <div class="subtitle">Cloze • Flashcards • Vocab</div>
+        </div>
+      </div>
 
-<h1>Spanish Learning Trainer</h1>
-<p>GitHub Pages is working ✅</p>
+      <nav class="nav" aria-label="Navigation">
+        <a class="navlink" href="#/">Start</a>
+        <a class="navlink" href="#/vocabulary">Vokabeln</a>
+        <a class="navlink" href="#/flashcards">Flashcards</a>
+        <a class="navlink" href="#/verb-cloze">Verb Cloze</a>
+      </nav>
+    </header>
 
-<div class="box">
-  <p><strong>Status:</strong> Repo & Pages korrekt eingerichtet.</p>
-  <p>Nächster Schritt: Vocabulary UI & Flashcards aktivieren.</p>
-</div>
+    <main class="container">
+      <section id="app" class="panel" aria-live="polite"></section>
+    </main>
 
-</body>
+    <script type="module" src="./app.js"></script>
+  </body>
 </html>
