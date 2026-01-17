@@ -30,9 +30,6 @@ function isSupportedRegularPreterite(inf) {
   ]);
   if (irregularSet.has(v)) return false;
 
-  // Spelling-change in yo: -car/-gar/-zar (busqué, llegué, empecé) -> exclude for now
-  if (v.endsWith("car") || v.endsWith("gar") || v.endsWith("zar")) return false;
-
   // i->y in 3rd person for many -uir (construyó) and -eer/-oer (leyó) -> exclude for now
   if (v.endsWith("uir") || v.endsWith("eer") || v.endsWith("oer")) return false;
 
