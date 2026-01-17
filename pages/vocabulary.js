@@ -1,7 +1,7 @@
 import { getVocab, addVocab, deleteVocab } from "../data/vocabStore.js";
 import { getProgressMap, ensureProgress } from "../data/progressStore.js";
 
-const SYNC_URL = "https://script.google.com/macros/s/AKfycbzYjUzaTOp48eGQIgKoiJld9T9hm9VITlpY3JUbztIj2Vo5oz0sPAt3oEsx7yfikeRq/exec"; // must end with /exec
+const SYNC_URL = "https://spanish-sync-proxy.ricokunzed.workers.dev";  // cloudflare worker
 
 function uid() {
   return "v_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
@@ -73,7 +73,7 @@ async function syncPull(statusEl) {
 
   setStatus(statusEl, "Sync Pull: loading from Google Sheet…");
 
-  const url = SYNC_URL.replace(/\/$/, "") + "?action=pull";
+  const url = SYNC_URL.replace(/\/$/, "") + "/api/pull";
   const res = await fetch(url, { method: "GET" });
 
   if (!res.ok) {
@@ -114,7 +114,7 @@ async function syncPush(statusEl) {
     progress: progressMap
   };
 
-  const url = SYNC_URL.replace(/\/$/, "") + "?action=push";
+  const url = SYNC_URL.replace(/\/$/, "") + "/api/push";
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
