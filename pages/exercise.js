@@ -355,43 +355,64 @@ export function renderExercise(pageRoot) {
 
     exerciseBody.innerHTML = html;
 
-    // Focus current input
-    if (currentSlotId) {
-      const input = exerciseBody.querySelector(`input[data-blank-id="${CSS.escape(currentSlotId)}"]`);
-      if (input) input.focus();
-    }
+    // Enable exactly ONE input: the next not-yet-revealed input that is currently visible in the DOM.
+    // This avoids "wrong currentSlotId" situations where the intended input gets disabled.
+    const inputs = Array.from(exerciseBody.querySelectorAll('input[data-blank-id]'));
+    let domCurrent = null;
 
-    // Attach listeners for inputs (only on current slot)
-    exerciseBody.querySelectorAll("input[data-blank-id]").forEach(inp => {
+    for (const inp of inputs) {
       const slotId = inp.getAttribute("data-blank-id");
-      const isCurrent = slotId === currentSlotId;
-      inp.disabled = !isCurrent;
+      if (!slotId) continue;
 
-      inp.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter") {
-          ev.preventDefault();
-          submitCurrent();
-        }
-      });
-    });
+      // revealed inputs stay disabled
+      if (revealedSlots.has(slotId)) {
+        inp.disabled = true;
+        continue;
+      }
+
+      // first non-revealed becomes current
+      if (!domCurrent) {
+        domCurrent = inp;
+        inp.disabled = false;
+      } else {
+        inp.disabled = true;
+      }
+}
+
+// Attach key handler (safe: overwrite via onkeydown to avoid stacking listeners)
+for (const inp of inputs) {
+  inp.onkeydown = (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      submitCurrent();
+    }
+  };
+}
+
+// Focus current input reliably (mobile-friendly)
+if (domCurrent) {
+  // Small timeout helps iOS/Safari after DOM updates
+  setTimeout(() => {
+    try { domCurrent.focus(); } catch {}
+  }, 0);
+}
+
   }
 
   function submitCurrent() {
     if (!generated) return;
     const items = generated.items;
 
-    // find current slot id (first not revealed)
-    let currentSlotId = null;
-    for (const id of slotOrder) {
-      if (!revealedSlots.has(id)) {
-        currentSlotId = id;
-        break;
-      }
-    }
+    const inputs = Array.from(exerciseBody.querySelectorAll('input[data-blank-id]'));
+    const currentInput = inputs.find(i => !i.disabled);
+
+    if (!currentInput) return;
+
+    const currentSlotId = currentInput.getAttribute("data-blank-id");
     if (!currentSlotId) return;
 
-    const input = exerciseBody.querySelector(`input[data-blank-id="${CSS.escape(currentSlotId)}"]`);
-    const user = input ? input.value : "";
+    const user = currentInput.value || "";
+
     answers[currentSlotId] = user;
 
     // Determine correct
