@@ -18,16 +18,26 @@ function ensureExerciseDefaults(s) {
     size: 10,
     lemmas: []
   };
-  if (!TENSES.some(t => t.key === s.practice.irregularExercise.tense)) s.practice.irregularExercise.tense = "preterite";
-  if (!SIZES.includes(Number(s.practice.irregularExercise.size))) s.practice.irregularExercise.size = 10;
-  if (!Array.isArray(s.practice.irregularExercise.lemmas)) s.practice.irregularExercise.lemmas = [];
+  if (!TENSES.some((t) => t.key === s.practice.irregularExercise.tense)) {
+    s.practice.irregularExercise.tense = "preterite";
+  }
+  if (!SIZES.includes(Number(s.practice.irregularExercise.size))) {
+    s.practice.irregularExercise.size = 10;
+  }
+  if (!Array.isArray(s.practice.irregularExercise.lemmas)) {
+    s.practice.irregularExercise.lemmas = [];
+  }
   s.practice.irregularExercise.lemmas = s.practice.irregularExercise.lemmas.slice(0, 10);
   return s;
 }
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
   }[m]));
 }
 
@@ -37,7 +47,7 @@ function unique(arr) {
 
 function getAvailableLemmasForTense(tense) {
   return Object.keys(irregularPack)
-    .filter(lemma => irregularPack?.[lemma]?.[tense])
+    .filter((lemma) => irregularPack?.[lemma]?.[tense])
     .sort((a, b) => a.localeCompare(b));
 }
 
@@ -54,12 +64,17 @@ function getVocabContextWords() {
   // { id, lemma, translation, pos, ... }
   const raw = localStorage.getItem("spanishtrainer:vocab:v1");
   if (!raw) return [];
+
   let vocab = [];
-  try { vocab = JSON.parse(raw); } catch { return []; }
+  try {
+    vocab = JSON.parse(raw);
+  } catch {
+    return [];
+  }
 
   const words = (Array.isArray(vocab) ? vocab : [])
-    .filter(v => String(v.pos || "").toLowerCase() !== "verb")
-    .map(v => String(v.lemma || "").trim())
+    .filter((v) => String(v.pos || "").toLowerCase() !== "verb")
+    .map((v) => String(v.lemma || "").trim())
     .filter(Boolean);
 
   // random sample up to 40
@@ -81,8 +96,11 @@ async function postGenerate(payload) {
 
   const txt = await res.text();
   let data;
-  try { data = JSON.parse(txt); }
-  catch { throw new Error(`Worker returned non-JSON: ${txt.slice(0, 200)}`); }
+  try {
+    data = JSON.parse(txt);
+  } catch {
+    throw new Error(`Worker returned non-JSON: ${txt.slice(0, 200)}`);
+  }
 
   if (!res.ok || !data.ok) {
     const msg = data?.error?.message || data?.message || "Unknown error";
@@ -121,12 +139,8 @@ function buildLineHtml(item, slotIndex, isRevealed, userAnswer, isCorrect, corre
         : `<span class="badge active" style="margin-left:8px;">❌ ${escapeHtml(correctForm)}</span>`)
     : "";
 
-  const speakerPrefix = item.type === "dialogue_line"
-    ? `<b>${escapeHtml(item.speaker)}:</b> `
-    : "";
+  const speakerPrefix = item.type === "dialogue_line" ? `<b>${escapeHtml(item.speaker)}:</b> ` : "";
 
-  // current line must be fully visible: pre + input + post
-  // next lines with blanks are hidden by higher-level logic, not here.
   return `
     <div class="p" style="margin:6px 0;">
       ${speakerPrefix}${escapeHtml(pre)}
@@ -201,7 +215,7 @@ export function renderExercise(pageRoot) {
   const progressMeta = pageRoot.querySelector("#progressMeta");
 
   let generated = null; // worker exercise JSON
-  let slotOrder = [];   // array of slot ids in order s1..sN
+  let slotOrder = []; // array of slot ids in order s1..sN
   let revealedSlots = new Set(); // slot ids revealed
   let answers = {}; // slotId -> userAnswer
   let score = { done: 0, correct: 0 };
@@ -219,17 +233,18 @@ export function renderExercise(pageRoot) {
 
   function renderTenseBadges() {
     const st = currentSettings().practice.irregularExercise;
-    tenseRow.innerHTML = TENSES.map(t => {
+    tenseRow.innerHTML = TENSES.map((t) => {
       const active = st.tense === t.key;
       return `<button class="badge ${active ? "active" : ""}" data-tense="${escapeHtml(t.key)}" type="button">${escapeHtml(t.label)}</button>`;
     }).join("");
-    tenseRow.querySelectorAll("[data-tense]").forEach(btn => {
+
+    tenseRow.querySelectorAll("[data-tense]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const tense = btn.getAttribute("data-tense");
-        updateSettings(ex => {
+        updateSettings((ex) => {
           ex.tense = tense;
           const available = new Set(getAvailableLemmasForTense(tense));
-          ex.lemmas = (ex.lemmas || []).filter(l => available.has(l));
+          ex.lemmas = (ex.lemmas || []).filter((l) => available.has(l));
         });
         renderAll();
       });
@@ -238,14 +253,17 @@ export function renderExercise(pageRoot) {
 
   function renderSizeBadges() {
     const st = currentSettings().practice.irregularExercise;
-    sizeRow.innerHTML = SIZES.map(n => {
+    sizeRow.innerHTML = SIZES.map((n) => {
       const active = Number(st.size) === n;
       return `<button class="badge ${active ? "active" : ""}" data-size="${n}" type="button">${n}</button>`;
     }).join("");
-    sizeRow.querySelectorAll("[data-size]").forEach(btn => {
+
+    sizeRow.querySelectorAll("[data-size]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const n = Number(btn.getAttribute("data-size"));
-        updateSettings(ex => { ex.size = n; });
+        updateSettings((ex) => {
+          ex.size = n;
+        });
         renderAll();
       });
     });
@@ -255,17 +273,20 @@ export function renderExercise(pageRoot) {
     const st = currentSettings().practice.irregularExercise;
     const available = getAvailableLemmasForTense(st.tense);
     const selected = new Set(st.lemmas || []);
+
     verbsHint.textContent = `Available irregular verbs: ${available.length}. Select up to 10.`;
 
-    verbsRow.innerHTML = available.map(lemma => {
-      const active = selected.has(lemma);
-      return `<button class="badge ${active ? "active" : ""}" data-lemma="${escapeHtml(lemma)}" type="button">${escapeHtml(lemma)}</button>`;
-    }).join("");
+    verbsRow.innerHTML = available
+      .map((lemma) => {
+        const active = selected.has(lemma);
+        return `<button class="badge ${active ? "active" : ""}" data-lemma="${escapeHtml(lemma)}" type="button">${escapeHtml(lemma)}</button>`;
+      })
+      .join("");
 
-    verbsRow.querySelectorAll("[data-lemma]").forEach(btn => {
+    verbsRow.querySelectorAll("[data-lemma]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const lemma = btn.getAttribute("data-lemma");
-        updateSettings(ex => {
+        updateSettings((ex) => {
           const next = unique(toggleLemma(ex.lemmas || [], lemma));
           if (next.length > 10) {
             genHint.textContent = "Max 10 verbs selected.";
@@ -282,6 +303,7 @@ export function renderExercise(pageRoot) {
     const ex = currentSettings().practice.irregularExercise;
     const count = ex.lemmas.length;
     const size = Number(ex.size);
+
     selectionMeta.textContent = `Selected: ${count} · Tense: ${ex.tense} · Blanks: ${size}`;
     generateBtn.disabled = count === 0;
     genHint.textContent = count === 0 ? "Pick at least 1 verb." : "";
@@ -298,65 +320,57 @@ export function renderExercise(pageRoot) {
     // Growth rule B:
     // show items up to (and including) the current slot item;
     // hide from the next slot item onward.
-    // Filler between current and next slot item is hidden (because it's "from the next blank onward").
-    // Exception: current slot item itself is fully visible (pre+post always).
     const size = slotOrder.length;
     let currentSlotIdx = 0;
     while (currentSlotIdx < size && revealedSlots.has(slotOrder[currentSlotIdx])) currentSlotIdx++;
 
-    // currentSlotIdx is the next to answer
     const visible = [];
     let slotSeen = 0;
 
     for (const it of items) {
       if (it.slot) {
         slotSeen += 1;
-        if (slotSeen <= currentSlotIdx + 1) {
-          visible.push(true);
-        } else {
-          visible.push(false);
-        }
+        visible.push(slotSeen <= currentSlotIdx + 1);
       } else {
-        // filler: visible only if we haven't reached the next unanswered slot line yet
-        // i.e., visible while slotSeen <= currentSlotIdx
+        // filler visible only before the next unanswered slot line
         visible.push(slotSeen <= currentSlotIdx);
       }
     }
+
     return { currentSlotIdx, visible };
   }
 
-  function renderExercise() {
+  function renderGeneratedExercise() {
     if (!generated) return;
 
     const items = generated.items;
-    const { currentSlotIdx, visible } = computeVisibility(items);
+    const { visible } = computeVisibility(items);
 
-    const currentSlotId = slotOrder[currentSlotIdx] || null;
-
-    // Update meta
     progressMeta.textContent = `Progress: ${score.correct}/${score.done} correct · Remaining: ${slotOrder.length - score.done}`;
 
-    // Render visible items
     let slotCounter = 0;
-    const html = items.map((it, idx) => {
-      if (!visible[idx]) return "";
-      if (it.slot) {
-        const slotId = it.slot.id;
-        const isRevealed = revealedSlots.has(slotId);
-        const userAnswer = answers[slotId] || "";
-        const correctForm = getCorrectForm(it.slot.lemma, it.slot.tense, it.slot.person);
-        const isCorrect = isRevealed ? answersEqualTolerant(userAnswer, correctForm) : false;
-        const out = buildLineHtml(it, slotCounter, isRevealed, userAnswer, isCorrect, correctForm);
-        slotCounter += 1;
-        return out;
-      }
-      return buildLineHtml(it, slotCounter, false, "", false, "");
-    }).join("");
+    const html = items
+      .map((it, idx) => {
+        if (!visible[idx]) return "";
+
+        if (it.slot) {
+          const slotId = it.slot.id;
+          const isRevealed = revealedSlots.has(slotId);
+          const userAnswer = answers[slotId] || "";
+          const correctForm = getCorrectForm(it.slot.lemma, it.slot.tense, it.slot.person);
+          const isCorrect = isRevealed ? answersEqualTolerant(userAnswer, correctForm) : false;
+          const out = buildLineHtml(it, slotCounter, isRevealed, userAnswer, isCorrect, correctForm);
+          slotCounter += 1;
+          return out;
+        }
+
+        return buildLineHtml(it, slotCounter, false, "", false, "");
+      })
+      .join("");
 
     exerciseBody.innerHTML = html;
 
-    // Enable exactly ONE input: the next not-yet-revealed input that is currently visible in the DOM.
-    // This avoids "wrong currentSlotId" situations where the intended input gets disabled.
+    // DOM-based "current blank" selection (robust): enable exactly one input
     const inputs = Array.from(exerciseBody.querySelectorAll('input[data-blank-id]'));
     let domCurrent = null;
 
@@ -364,69 +378,72 @@ export function renderExercise(pageRoot) {
       const slotId = inp.getAttribute("data-blank-id");
       if (!slotId) continue;
 
-      // revealed inputs stay disabled
       if (revealedSlots.has(slotId)) {
         inp.disabled = true;
         continue;
       }
 
-      // first non-revealed becomes current
       if (!domCurrent) {
         domCurrent = inp;
         inp.disabled = false;
       } else {
         inp.disabled = true;
       }
-}
 
-// Attach key handler (safe: overwrite via onkeydown to avoid stacking listeners)
-for (const inp of inputs) {
-  inp.onkeydown = (ev) => {
-    if (ev.key === "Enter") {
-      ev.preventDefault();
-      submitCurrent();
+      // Optional: clicking/tapping should always focus current input
+      inp.onclick = () => {
+        if (!inp.disabled) {
+          try {
+            inp.focus();
+          } catch {}
+        }
+      };
     }
-  };
-}
 
-// Focus current input reliably (mobile-friendly)
-if (domCurrent) {
-  // Small timeout helps iOS/Safari after DOM updates
-  setTimeout(() => {
-    try { domCurrent.focus(); } catch {}
-  }, 0);
-}
+    // Attach key handler (overwrite to avoid stacking listeners)
+    for (const inp of inputs) {
+      inp.onkeydown = (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          submitCurrent();
+        }
+      };
+    }
 
+    if (domCurrent) {
+      setTimeout(() => {
+        try {
+          domCurrent.focus();
+        } catch {}
+      }, 0);
+    }
   }
 
   function submitCurrent() {
     if (!generated) return;
-    const items = generated.items;
 
     const inputs = Array.from(exerciseBody.querySelectorAll('input[data-blank-id]'));
-    const currentInput = inputs.find(i => !i.disabled);
-
+    const currentInput = inputs.find((i) => !i.disabled);
     if (!currentInput) return;
 
     const currentSlotId = currentInput.getAttribute("data-blank-id");
     if (!currentSlotId) return;
 
     const user = currentInput.value || "";
-
     answers[currentSlotId] = user;
 
-    // Determine correct
-    const item = items.find(it => it?.slot?.id === currentSlotId);
+    const item = generated.items.find((it) => it?.slot?.id === currentSlotId);
+    if (!item) return;
+
     const correctForm = getCorrectForm(item.slot.lemma, item.slot.tense, item.slot.person);
     const ok = answersEqualTolerant(user, correctForm);
 
     score.done += 1;
     if (ok) score.correct += 1;
 
-    // Reveal (shows solution badge; if wrong shows correct form)
     revealedSlots.add(currentSlotId);
 
-    renderExercise();
+    renderGeneratedExercise();
   }
 
   generateBtn.addEventListener("click", async () => {
@@ -447,7 +464,6 @@ if (domCurrent) {
 
       generated = await postGenerate(payload);
 
-      // init state
       slotOrder = Array.from({ length: Number(ex.size) }, (_, i) => `s${i + 1}`);
       revealedSlots = new Set();
       answers = {};
@@ -455,7 +471,8 @@ if (domCurrent) {
 
       exerciseCard.style.display = "";
       genHint.textContent = "Generated ✅ (press Enter to submit each blank)";
-      renderExercise();
+
+      renderGeneratedExercise();
     } catch (e) {
       genHint.textContent = `Error: ${String(e?.message || e)}`;
       generated = null;
