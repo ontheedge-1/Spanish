@@ -464,7 +464,12 @@ export function renderExercise(pageRoot) {
 
       generated = await postGenerate(payload);
 
-      slotOrder = Array.from({ length: Number(ex.size) }, (_, i) => `s${i + 1}`);
+      // IMPORTANT: Progression must follow the actual order of blanks in the generated text,
+      // not the numeric slot ids. The LLM may place slot ids in any order.
+      slotOrder = (generated.items || []).filter((it) => it && it.slot).map((it) => it.slot.id);
+      if (slotOrder.length !== Number(ex.size)) {
+        throw new Error(`Generated exercise invalid: expected ${Number(ex.size)} slots but got ${slotOrder.length}`);
+      }
       revealedSlots = new Set();
       answers = {};
       score = { done: 0, correct: 0 };
