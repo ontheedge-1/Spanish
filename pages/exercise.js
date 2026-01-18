@@ -130,6 +130,12 @@ function buildLineHtml(item, slotIndex, isRevealed, userAnswer, isCorrect, corre
   const slot = item.slot;
   const blankId = slot?.id || `s${slotIndex + 1}`;
 
+  // Optional hint: show the infinitive being tested (e.g. "(hacer)").
+  // This is derived from slot.lemma (no need for the LLM to print it).
+  const lemmaHint = slot?.lemma
+    ? `<span style="margin-left:6px; font-size:12px; opacity:0.55;">(${escapeHtml(slot.lemma)})</span>`
+    : "";
+
   const inputDisabled = isRevealed ? "disabled" : "";
   const answerVal = isRevealed ? (userAnswer ?? "") : "";
 
@@ -152,6 +158,7 @@ function buildLineHtml(item, slotIndex, isRevealed, userAnswer, isCorrect, corre
         value="${escapeHtml(answerVal)}"
         autocomplete="off"
       />
+      ${lemmaHint}
       ${escapeHtml(post)}
       ${statusBadge}
     </div>
